@@ -1,7 +1,10 @@
 ﻿using System.Collections.Generic;
+using System.Linq;
+using System.Net;
 using System.Web.Http;
-using ToDoClient.Models;
-using ToDoClient.Services;
+using ModelsLib;
+using Service;
+
 
 namespace ToDoClient.Controllers
 {
@@ -17,10 +20,15 @@ namespace ToDoClient.Controllers
         /// Returns all todo-items for the current user.
         /// </summary>
         /// <returns>The list of todo-items.</returns>
-        public IList<ToDoItemViewModel> Get()
+        public IEnumerable<ToDoItemViewModel> Get()
         {
-            var userId = userService.GetOrCreateUser();
-            return todoService.GetItems(userId);
+            int UserId = userService.GetOrCreateUser();
+
+            WebRequest webRequest = WebRequest.Create("http://localhost:50433/Data/InitDataBase/?userId=" +
+                userService.GetOrCreateUser());
+            WebResponse webResp = webRequest.GetResponse();
+
+            return todoService.GetAllItemsDataBase(UserId).Select(m => m.ToMvc());
         }
 
         /// <summary>
@@ -33,19 +41,19 @@ namespace ToDoClient.Controllers
             todoService.UpdateItem(todo);
         }
 
-        /// <summary>
-        /// Deletes the specified todo-item.
-        /// </summary>
-        /// <param name="id">The todo item identifier.</param>
-        public void Delete(int id)
-        {
-            todoService.DeleteItem(id);
-        }
+        ///// <summary>
+        ///// Deletes the specified todo-item.
+        ///// </summary>
+        ///// <param name="id">The todo item identifier.</param>
+        //public void Delete(int id)
+        //{
+        //    todoService.DeleteItem(id);
+        //}
 
         /// <summary>
         /// Creates a new todo-item.
         /// </summary>
-        /// <param name="todo"> The todo-item to create. </param>
+        /// <param name="todo">The todo-item to create.</param>
         public void Post(ToDoItemViewModel todo)
         {
             todo.UserId = userService.GetOrCreateUser();
