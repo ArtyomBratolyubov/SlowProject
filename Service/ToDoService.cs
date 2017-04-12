@@ -205,7 +205,7 @@ namespace Service
             SaveDataBase();
         }
 
-        void SyncIds(int userId)
+        private void SyncIds(int userId)
         {
             var dataCloud = GetAllItemsCloud(userId);
 
