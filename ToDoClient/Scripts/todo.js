@@ -119,6 +119,8 @@
 $(function () {
     // add new task button click handler
     $("#newCreate").click(function () {
+        if ($("#spinner").is(":visible"))
+            return;
         var isCompleted = $('#newCompleted')[0].checked;
         var name = $('#newName')[0].value;
 
@@ -138,12 +140,12 @@ $(function () {
             .done(function (tasks) {
                 tasksManager.displayTasks("#tasks > tbody", tasks);
 
-                $("#delBtn-" + id).addClass("disabled");
-                $("#checkInpt-" + id).addClass("disabled");
+                //$("#delBtn-" + id).addClass("disabled");
+                //$("#checkInpt-" + id).addClass("disabled");
                 tasksManager.syncTask(id)
                     .done(function () {
-                        $("#delBtn-" + id).removeClass("disabled");
-                        $("#checkInpt-" + id).removeClass("disabled");
+                        //$("#delBtn-" + id).removeClass("disabled");
+                        //$("#checkInpt-" + id).removeClass("disabled");
                     });
             });
     });
@@ -166,6 +168,8 @@ $(function () {
     // bind delete button click for future rows
     $('#tasks > tbody').on('click', '.delete-button', function () {
         if ($(this).hasClass("disabled"))
+            return;
+        if ($("#spinner").is(":visible"))
             return;
 
         var taskId = $(this).parent().parent().attr("data-id");

@@ -49,7 +49,11 @@ namespace Service
 
         private bool loading = false;
 
-        private static int i = 0;
+        private static int initBlocker = 0;
+
+        private static bool firstLaunch = true;
+
+        private static int syncObjs = 0;
 
         /// <summary>
         /// Creates the service.
@@ -68,18 +72,22 @@ namespace Service
         /// <returns>The list of todos.</returns>
         public void InitDataBase(int userId)
         {
+            if (initBlocker != 0 || !firstLaunch)
+                return;
+            initBlocker++;
 
             if (dataBase.Set<Todo>().Any())
             {
-                if (dataBase.Set<Todo>().Any(m => m.CloudId == 0) && i == 0)
+                if (dataBase.Set<Todo>().Any(m => m.CloudId == 0) && firstLaunch)
                 {
                     SyncIds(userId);
+                    firstLaunch = false;
                 }
-                i++;
+                initBlocker = 0;
 
                 return;
             }
-
+            firstLaunch = false;
             var data = GetAllItemsCloud(userId);
 
             data = data.ToList();
@@ -88,12 +96,12 @@ namespace Service
                 todo.Name = todo.Name.Replace(" ", string.Empty);
                 todo.IsSync = true;
             }
-            i++;
-            if (i == 1)
-                dataBase.Set<Todo>().AddRange(data);
+
+            dataBase.Set<Todo>().AddRange(data);
 
             SaveDataBase();
 
+            initBlocker = 0;
             //return JsonConvert.DeserializeObject<IList<ToDoItemViewModel>>(dataAsString);
         }
 
@@ -134,7 +142,7 @@ namespace Service
         {
             var obj = dataBase.Set<Todo>().FirstOrDefault(m => m.Id == item.ToDoId || m.CloudId == item.ToDoId);
 
-            if ((obj.CloudId == null || obj.CloudId == 0) && obj.IsSync)
+            if ((obj.CloudId == null || obj.CloudId == 0))
             {
                 SyncIds(item.UserId);
             }
@@ -148,12 +156,36 @@ namespace Service
 
             item.ToDoId = obj.CloudId.Value;
 
-            new Task(() =>
+            if (obj.IsSync)
             {
-                httpClient.PutAsJsonAsync(serviceApiUrl + UpdateUrl, item)
-                .Result.EnsureSuccessStatusCode();
-            }).Start();
+                new Task(() =>
+                {
+                    bool success = false;
+                    for (int i = 0; i < 100; i++)
+                    {
+                        try
+                        {
+                            httpClient.PutAsJsonAsync(serviceApiUrl + UpdateUrl, item)
+                                .Result.EnsureSuccessStatusCode();
+                            success = true;
+                            break;
+                        }
+                        catch (Exception ex)
+                        {
+                            Debug.WriteLine("Update item " + item.ToDoId + " try #" + i);
+                        }
+                        Task.Delay(1000);
+                    }
+                    if (!success)
+                    {
+                        TrucnDatabase();
+                    }
+
+                }).Start();
+            }
         }
+
+
 
         /// <summary>
         /// Deletes a todo.
@@ -165,7 +197,7 @@ namespace Service
             if (obj == null)
                 return;
 
-            if ((obj.CloudId == null || obj.CloudId == 0) && obj.IsSync)
+            if ((obj.CloudId == null || obj.CloudId == 0))
             {
                 SyncIds(userId);
             }
@@ -178,8 +210,26 @@ namespace Service
             {
                 new Task(() =>
                 {
-                    httpClient.DeleteAsync(string.Format(serviceApiUrl + DeleteUrl, obj.CloudId))
-                        .Result.EnsureSuccessStatusCode();
+                    bool success = false;
+                    for (int i = 0; i < 100; i++)
+                    {
+                        try
+                        {
+                            httpClient.DeleteAsync(string.Format(serviceApiUrl + DeleteUrl, obj.CloudId))
+                              .Result.EnsureSuccessStatusCode();
+                            success = true;
+                            break;
+                        }
+                        catch (Exception ex)
+                        {
+                            Debug.WriteLine("Delete item " + obj.CloudId + " try #" + i);
+                        }
+                        Task.Delay(1000);
+                    }
+                    if (!success)
+                    {
+                        TrucnDatabase();
+                    }
                 }).Start();
             }
 
@@ -192,7 +242,9 @@ namespace Service
         {
             var ob = dataBase.Set<Todo>().FirstOrDefault(m => m.Id == id);
 
-            httpClient.PostAsJsonAsync(serviceApiUrl + CreateUrl, ob).Result.EnsureSuccessStatusCode();
+            syncObjs++;
+            var resp = httpClient.PostAsJsonAsync(serviceApiUrl + CreateUrl, ob).Result.EnsureSuccessStatusCode();
+            syncObjs--;
 
             ob = dataBase.Set<Todo>().FirstOrDefault(m => m.Id == id);
             if (ob == null)
@@ -207,6 +259,13 @@ namespace Service
 
         private void SyncIds(int userId)
         {
+
+            while (syncObjs != 0)
+            {
+                Debug.WriteLine("Waiting for objects to syn "+syncObjs);
+            }
+
+
             var dataCloud = GetAllItemsCloud(userId);
 
             IEnumerable<Todo> dataDb = dataBase.Set<Todo>();
@@ -226,6 +285,8 @@ namespace Service
             for (int i = 0; i < dataCloud.Count(); i++)
             {
                 dataDb.ElementAt(i).CloudId = dataCloud.ElementAt(i).Id;
+
+                dataDb.ElementAt(i).IsSync = true;
 
                 dataBase.Entry(dataDb.ElementAt(i)).State = System.Data.Entity.EntityState.Modified;
             }
@@ -272,6 +333,11 @@ namespace Service
                 }
                 throw;
             }
+        }
+
+        private void TrucnDatabase()
+        {
+            dataBase.Database.ExecuteSqlCommand("TRUNCATE TABLE [Todoes]");
         }
     }
 }

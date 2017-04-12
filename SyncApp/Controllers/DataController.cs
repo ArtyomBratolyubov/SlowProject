@@ -11,11 +11,10 @@ namespace SyncApp.Controllers
     public class DataController : Controller
     {
         private readonly ToDoService todoService = new ToDoService();
-        private readonly UserService userService = new UserService();
 
         public void Index()
         {
-            int UserId = userService.GetOrCreateUser();
+            
 
         }
 

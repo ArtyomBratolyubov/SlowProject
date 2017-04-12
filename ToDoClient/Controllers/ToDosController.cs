@@ -31,33 +31,5 @@ namespace ToDoClient.Controllers
             return todoService.GetAllItemsDataBase(UserId).Select(m => m.ToMvc());
         }
 
-        /// <summary>
-        /// Updates the existing todo-item.
-        /// </summary>
-        /// <param name="todo">The todo-item to update.</param>
-        public void Put(ToDoItemViewModel todo)
-        {
-            todo.UserId = userService.GetOrCreateUser();
-            todoService.UpdateItem(todo);
-        }
-
-        ///// <summary>
-        ///// Deletes the specified todo-item.
-        ///// </summary>
-        ///// <param name="id">The todo item identifier.</param>
-        //public void Delete(int id)
-        //{
-        //    todoService.DeleteItem(id);
-        //}
-
-        /// <summary>
-        /// Creates a new todo-item.
-        /// </summary>
-        /// <param name="todo">The todo-item to create.</param>
-        public void Post(ToDoItemViewModel todo)
-        {
-            todo.UserId = userService.GetOrCreateUser();
-            todoService.CreateItem(todo);
-        }
     }
 }
