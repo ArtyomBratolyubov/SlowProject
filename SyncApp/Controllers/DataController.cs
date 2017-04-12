@@ -24,14 +24,15 @@ namespace SyncApp.Controllers
         {
             todoService.InitDataBase(userId.Value);
 
-            return  0;
+            return 0;
         }
 
         [HttpPost]
-        public void Create(ToDoItemViewModel model)
+        public int Create(ToDoItemViewModel model)
         {
             //model.UserId = userService.GetOrCreateUser();
-            todoService.CreateItem(model);
+            return todoService.CreateItem(model);
+
         }
 
         [HttpPost]
@@ -39,5 +40,18 @@ namespace SyncApp.Controllers
         {
             todoService.DeleteItem(model.ToDoId, model.UserId);
         }
+
+        [HttpPost]
+        public void SyncObj(ToDoItemViewModel model)
+        {
+            todoService.SyncObj(model.ToDoId);
+        }
+
+        [HttpPost]
+        public void Update(ToDoItemViewModel model)
+        {
+            todoService.UpdateItem(model);
+        }
+
     }
 }

@@ -47,6 +47,10 @@ namespace Service
 
         private Task synTask;
 
+        private bool loading = false;
+
+        private static int i = 0;
+
         /// <summary>
         /// Creates the service.
         /// </summary>
@@ -64,8 +68,15 @@ namespace Service
         /// <returns>The list of todos.</returns>
         public void InitDataBase(int userId)
         {
+
             if (dataBase.Set<Todo>().Any())
             {
+                if (dataBase.Set<Todo>().Any(m => m.CloudId == 0) && i == 0)
+                {
+                    SyncIds(userId);
+                }
+                i++;
+
                 return;
             }
 
@@ -75,36 +86,20 @@ namespace Service
             foreach (var todo in data)
             {
                 todo.Name = todo.Name.Replace(" ", string.Empty);
-                todo.IsIdSync = true;
                 todo.IsSync = true;
             }
+            i++;
+            if (i == 1)
+                dataBase.Set<Todo>().AddRange(data);
 
-            dataBase.Set<Todo>().AddRange(data);
-            try
-            {
-                dataBase.SaveChanges();
-            }
-            catch (DbEntityValidationException e)
-            {
-                foreach (var eve in e.EntityValidationErrors)
-                {
-                    Debug.WriteLine("Entity of type \"{0}\" in state \"{1}\" has the following validation errors:",
-                        eve.Entry.Entity.GetType().Name, eve.Entry.State);
-                    foreach (var ve in eve.ValidationErrors)
-                    {
-                        Debug.WriteLine("- Property: \"{0}\", Error: \"{1}\"",
-                            ve.PropertyName, ve.ErrorMessage);
-                    }
-                }
-                throw;
-            }
-
+            SaveDataBase();
 
             //return JsonConvert.DeserializeObject<IList<ToDoItemViewModel>>(dataAsString);
         }
 
         public IEnumerable<Todo> GetAllItemsCloud(int userId)
         {
+
             var dataAsString = httpClient.GetStringAsync(string.Format(serviceApiUrl + GetAllUrl, userId)).Result;
 
             return JsonConvert.DeserializeObject<IList<ToDoItemViewModel>>(dataAsString)
@@ -120,20 +115,15 @@ namespace Service
         /// Creates a todo. UserId is taken from the model.
         /// </summary>
         /// <param name="item">The todo to create.</param>
-        public void CreateItem(ToDoItemViewModel item)
+        public int CreateItem(ToDoItemViewModel item)
         {
             Todo obj = item.ToTodo();
 
             dataBase.Set<Todo>().Add(obj);
 
-            dataBase.SaveChanges();
+            SaveDataBase();
 
-            SyncObj(obj);
-
-            //httpClient.PostAsJsonAsync(serviceApiUrl + CreateUrl, item)
-            //    .Result.EnsureSuccessStatusCode();
-
-
+            return obj.Id;
         }
 
         /// <summary>
@@ -142,8 +132,27 @@ namespace Service
         /// <param name="item">The todo to update.</param>
         public void UpdateItem(ToDoItemViewModel item)
         {
-            httpClient.PutAsJsonAsync(serviceApiUrl + UpdateUrl, item)
+            var obj = dataBase.Set<Todo>().FirstOrDefault(m => m.Id == item.ToDoId || m.CloudId == item.ToDoId);
+
+            if ((obj.CloudId == null || obj.CloudId == 0) && obj.IsSync)
+            {
+                SyncIds(item.UserId);
+            }
+
+            obj = dataBase.Set<Todo>().FirstOrDefault(m => m.Id == item.ToDoId || m.CloudId == item.ToDoId);
+            obj.IsCompleted = item.IsCompleted;
+            obj.Name = item.Name;
+            dataBase.Entry(obj).State = System.Data.Entity.EntityState.Modified;
+
+            SaveDataBase();
+
+            item.ToDoId = obj.CloudId.Value;
+
+            new Task(() =>
+            {
+                httpClient.PutAsJsonAsync(serviceApiUrl + UpdateUrl, item)
                 .Result.EnsureSuccessStatusCode();
+            }).Start();
         }
 
         /// <summary>
@@ -152,56 +161,48 @@ namespace Service
         /// <param name="id">The todo Id to delete.</param>
         public void DeleteItem(int id, int userId)
         {
-            var obj = dataBase.Set<Todo>().FirstOrDefault(m => m.Id == id);
+            var obj = dataBase.Set<Todo>().FirstOrDefault(m => m.Id == id || m.CloudId == id);
             if (obj == null)
                 return;
 
-            //if (!obj.IsSync)
-            //{
-            //    dataBase.Set<Todo>().Remove(obj);
-
-            //    dataBase.SaveChanges();
-
-            //    return;
-            //}
-
-            if (!obj.IsIdSync)
+            if ((obj.CloudId == null || obj.CloudId == 0) && obj.IsSync)
             {
                 SyncIds(userId);
             }
 
+
+            obj = dataBase.Set<Todo>().FirstOrDefault(m => m.Id == id || m.CloudId == id);
             dataBase.Set<Todo>().Remove(obj);
 
-            httpClient.DeleteAsync(string.Format(serviceApiUrl + DeleteUrl, id))
-                .Result.EnsureSuccessStatusCode();
-
-            dataBase.SaveChanges();
-
-
-        }
-
-        void Sync()
-        {
-            var dataDb = dataBase.Set<Todo>().Where(m => m.IsSync == false);
-
-            for (int i = 0; i < dataDb.Count(); i++)
+            if (obj.IsSync)
             {
-                var obj = dataDb.ElementAt(i);
-
-                obj.IsSync = true;
-
-                dataBase.Entry(obj).State = System.Data.Entity.EntityState.Modified;
-
-                SyncObj(obj);
+                new Task(() =>
+                {
+                    httpClient.DeleteAsync(string.Format(serviceApiUrl + DeleteUrl, obj.CloudId))
+                        .Result.EnsureSuccessStatusCode();
+                }).Start();
             }
 
-            dataBase.SaveChanges();
+
+            SaveDataBase();
         }
 
-        void SyncObj(object obj)
+
+        public void SyncObj(int id)
         {
-            httpClient.PostAsJsonAsync(serviceApiUrl + CreateUrl, obj);
-            // .Result.EnsureSuccessStatusCode();
+            var ob = dataBase.Set<Todo>().FirstOrDefault(m => m.Id == id);
+
+            httpClient.PostAsJsonAsync(serviceApiUrl + CreateUrl, ob).Result.EnsureSuccessStatusCode();
+
+            ob = dataBase.Set<Todo>().FirstOrDefault(m => m.Id == id);
+            if (ob == null)
+                return;
+
+            ob.IsSync = true;
+
+            dataBase.Entry(ob).State = System.Data.Entity.EntityState.Modified;
+
+            SaveDataBase();
         }
 
         void SyncIds(int userId)
@@ -210,13 +211,25 @@ namespace Service
 
             IEnumerable<Todo> dataDb = dataBase.Set<Todo>();
 
-            int synCount = dataDb.Count(m => m.IsIdSync);
+            int synCount = dataDb.Count(m => m.CloudId != 0);
 
-            dataCloud = dataCloud.Skip(synCount);
+            dataCloud = dataCloud.Skip(synCount).ToList();
 
-            dataBase.Set<Todo>().RemoveRange(dataBase.Set<Todo>().Where(m => m.IsIdSync == false));
+            dataDb = dataDb.Skip(synCount);
 
-            dataBase.Set<Todo>().AddRange(dataCloud);
+            //foreach (var todo in dataDb)
+            //{
+            //    todo.CloudId = todo.Id;
+            //    dataBase.Entry(todo).State = System.Data.Entity.EntityState.Modified;
+            //}
+
+            for (int i = 0; i < dataCloud.Count(); i++)
+            {
+                dataDb.ElementAt(i).CloudId = dataCloud.ElementAt(i).Id;
+
+                dataBase.Entry(dataDb.ElementAt(i)).State = System.Data.Entity.EntityState.Modified;
+            }
+
 
             /*var dataCloud = GetAllItemsCloud(userId);
 
@@ -236,7 +249,29 @@ namespace Service
                 dataBase.Entry(dataDb.ElementAt(i)).State = System.Data.Entity.EntityState.Modified;
             }*/
 
-            dataBase.SaveChanges();
+            SaveDataBase();
+        }
+
+        private void SaveDataBase()
+        {
+            try
+            {
+                dataBase.SaveChanges();
+            }
+            catch (DbEntityValidationException e)
+            {
+                foreach (var eve in e.EntityValidationErrors)
+                {
+                    Debug.WriteLine("Entity of type \"{0}\" in state \"{1}\" has the following validation errors:",
+                        eve.Entry.Entity.GetType().Name, eve.Entry.State);
+                    foreach (var ve in eve.ValidationErrors)
+                    {
+                        Debug.WriteLine("- Property: \"{0}\", Error: \"{1}\"",
+                            ve.PropertyName, ve.ErrorMessage);
+                    }
+                }
+                throw;
+            }
         }
     }
 }

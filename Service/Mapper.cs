@@ -15,6 +15,7 @@ namespace Service
             return new Todo()
             {
                 Id = obj.ToDoId,
+                CloudId = obj.ToDoId,
                 Name = obj.Name,
                 IsCompleted = obj.IsCompleted,
                 UserId = obj.UserId
@@ -25,7 +26,7 @@ namespace Service
         {
             return new ToDoItemViewModel()
             {
-                ToDoId = obj.Id,
+                ToDoId = obj.CloudId !=0 ? obj.CloudId.Value : obj.Id,
                 Name = obj.Name,
                 IsCompleted = obj.IsCompleted,
                 UserId = obj.UserId

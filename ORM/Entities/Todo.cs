@@ -10,9 +10,10 @@ namespace ORM
 
     public partial class Todo
     {
-        [Key, DatabaseGenerated(DatabaseGeneratedOption.Identity)]
-        [Column("Id")]
+        [Key]
         public int Id { get; set; }
+
+        public int? CloudId { get; set; }
 
         public int UserId { get; set; }
 
@@ -23,11 +24,8 @@ namespace ORM
         
         public bool IsCompleted { get; set; }
 
-        //костыли
-        [DefaultValue("false")]
         public bool IsSync { get; set; }
-        [DefaultValue("false")]
-        public bool IsIdSync { get; set; }
+
     }
 }
 

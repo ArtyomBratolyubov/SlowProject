@@ -1,13 +1,14 @@
 ﻿var tasksManager = function () {
+    
 
     // appends a row to the tasks table.
     // @parentSelector: selector to append a row to.
     // @obj: task object to append.
     var appendRow = function (parentSelector, obj) {
         var tr = $("<tr data-id='" + obj.ToDoId + "'></tr>");
-        tr.append("<td><input type='checkbox' class='completed' " + (obj.IsCompleted ? "checked" : "") + "/></td>");
+        tr.append("<td class='text-center'><input type='checkbox' id='checkInpt-" + obj.ToDoId + "' class='completed' " + (obj.IsCompleted ? "checked" : "") + "/></td>");
         tr.append("<td class='name' >" + obj.Name + "</td>");
-        tr.append("<td><input type='button' class='delete-button' value='Delete' /></td>");
+        tr.append("<td><input type='button'  id='delBtn-" + obj.ToDoId + "' class='delete-button btn bg-danger ' value='Delete' /></td>");
         $(parentSelector).append(tr);
     }
 
@@ -24,7 +25,7 @@
     // starts loading tasks from server.
     // @returns a promise.
     var loadTasks = function () {
-        return $.getJSON("/api/todos");
+        return $.getJSON("/api/todos",hideSpinner);
     };
 
     // starts creating a task on the server.
@@ -36,7 +37,7 @@
         {
             url: "http://localhost:50433/Data/Create",
 
-            method: "POST" ,
+            method: "POST",
             crossDomain: true,
             contentType: "application/json; charset=utf-8",
             data: JSON.stringify({
@@ -44,7 +45,8 @@
                 ToDoId: 0,
                 IsCompleted: isCompleted,
                 Name: name
-            })
+            }),
+
         });
     };
 
@@ -56,13 +58,15 @@
     var updateTask = function (id, isCompleted, name) {
         return $.ajax(
         {
-            url: "/api/todos",
-            type: "PUT",
+            url: "http://localhost:50433/Data/Update/",
+            type: "POST",
             contentType: 'application/json',
+            crossDomain: true,
             data: JSON.stringify({
                 ToDoId: id,
                 IsCompleted: isCompleted,
-                Name: name
+                Name: name,
+                UserId: $.cookie("user")
             })
         });
     };
@@ -84,13 +88,30 @@
         });
     };
 
+    var syncTask = function (taskId) {
+        return $.ajax({
+            url: "http://localhost:50433/Data/SyncObj/",
+            type: "POST",
+            crossDomain: true,
+            contentType: "application/json",
+            data: JSON.stringify({
+                ToDoId: taskId
+            }),
+            success: function () {
+
+            }
+
+        });
+    };
+
     // returns public interface of task manager.
     return {
         loadTasks: loadTasks,
         displayTasks: displayTasks,
         createTask: createTask,
         deleteTask: deleteTask,
-        updateTask: updateTask
+        updateTask: updateTask,
+        syncTask: syncTask
     };
 }();
 
@@ -101,10 +122,29 @@ $(function () {
         var isCompleted = $('#newCompleted')[0].checked;
         var name = $('#newName')[0].value;
 
+        if (!name)
+            return;
+        if (name.length > 50)
+            return;
+
+        $('#newCompleted')[0].checked = null;
+        $('#newName')[0].value = null;
+        var id;
         tasksManager.createTask(isCompleted, name)
-            .then(tasksManager.loadTasks)
+            .done(function (data) {
+                id = data;
+            })
+            .then(tasksManager.loadTasks,showSpinner)
             .done(function (tasks) {
                 tasksManager.displayTasks("#tasks > tbody", tasks);
+
+                $("#delBtn-" + id).addClass("disabled");
+                $("#checkInpt-" + id).addClass("disabled");
+                tasksManager.syncTask(id)
+                    .done(function () {
+                        $("#delBtn-" + id).removeClass("disabled");
+                        $("#checkInpt-" + id).removeClass("disabled");
+                    });
             });
     });
 
@@ -114,21 +154,28 @@ $(function () {
         var taskId = tr.attr("data-id");
         var isCompleted = tr.find('.completed')[0].checked;
         var name = tr.find('.name').text();
-
+        showSpinner();
         tasksManager.updateTask(taskId, isCompleted, name)
             .then(tasksManager.loadTasks)
             .done(function (tasks) {
                 tasksManager.displayTasks("#tasks > tbody", tasks);
+                hideSpinner();
             });
     });
 
     // bind delete button click for future rows
     $('#tasks > tbody').on('click', '.delete-button', function () {
+        if ($(this).hasClass("disabled"))
+            return;
+
         var taskId = $(this).parent().parent().attr("data-id");
+
+        showSpinner();
         tasksManager.deleteTask(taskId)
             .then(tasksManager.loadTasks)
             .done(function (tasks) {
                 tasksManager.displayTasks("#tasks > tbody", tasks);
+                hideSpinner();
             });
     });
 
@@ -138,3 +185,11 @@ $(function () {
             tasksManager.displayTasks("#tasks > tbody", tasks);
         });
 });
+
+var showSpinner=function () {
+    $('#spinner').show();
+}
+
+var hideSpinner=function () {
+    $('#spinner').hide();
+}
